@@ -148,8 +148,8 @@ class ECSScheduler:
 
     def _list_servers_rest(self, name_filter: str) -> list:
         token  = self._get_iam_token()
-        url    = f"https://ecs.{self.region}.myhuaweicloud.com"
-        url   += f"/v2/{self.project_id}/servers/detail"
+        url = f"https://ecs.{self.region}.myhuaweicloud.com/v1/{self.project_id}/cloudservers/action"
+
         params = {"name": name_filter} if name_filter else {}
 
         resp = requests.get(url, headers={"X-Auth-Token": token}, params=params, timeout=30)
@@ -255,8 +255,7 @@ class ECSScheduler:
 
     def _stop_rest(self, targets: list):
         token   = self._get_iam_token()
-        url     = f"https://ecs.{self.region}.myhuaweicloud.com"
-        url    += f"/v2/{self.project_id}/servers/action"
+        url = f"https://ecs.{self.region}.myhuaweicloud.com/v1/{self.project_id}/cloudservers/action"
         payload = {
             "os-stop": {
                 "type"   : "SOFT",
