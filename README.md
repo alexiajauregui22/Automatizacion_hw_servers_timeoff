@@ -79,5 +79,3 @@ huawei-ecs-scheduler/
 ```bash
 pip install huaweicloudsdkcore huaweicloudsdkecs requests
 ```
-
-El pipeline las instala automáticamente en el stage `Verify Dependencies`.
