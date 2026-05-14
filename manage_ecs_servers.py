@@ -25,6 +25,7 @@ import json
 import time
 import argparse
 import logging
+import requests       
 from datetime import datetime
 from typing import Optional
 
@@ -48,8 +49,8 @@ try:
     SDK_AVAILABLE = True
 except ImportError:
     SDK_AVAILABLE = False
-    print("⚠ SDK Huawei no disponible. Usando llamadas REST directas.")
-    import requests
+    print("SDK Huawei no disponible. Usando llamadas REST directas.")
+
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
