@@ -9,7 +9,7 @@ Pipeline Jenkins para encendido y apagado automático de servidores ECS de certi
 | Evento    | Hora Lima | Cron UTC         |
 |-----------|-----------|------------------|
 | Encendido | Lun–Vie 07:00 AM | `0 12 * * 1-5` |
-| Apagado   | Lun–Vie 07:00 PM | `0 0 * * 2-6`  |
+| Apagado   | Lun–Vie 00:30 PM | `0 0 * * 2-6`  |
 
 ---
 
