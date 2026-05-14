@@ -1,0 +1,396 @@
+// ============================================================
+//  Jenkinsfile-v2
+//  Pipeline: Huawei ECS Scheduler — Encendido/Apagado automático
+//  Proyectos: Todos los TDP de Integratel
+//  Horario  : Lun–Vie 07:00 AM encendido / 07:00 PM apagado (Lima UTC-5)
+//  NOTA     : Usar "Jenkinsfile-v2" como Script Path en la config del Job
+// ============================================================
+
+def BUILD_USER_ID = "unknown"
+def SCRIPT_LOGS   = ""
+
+// ── Mapa de TDPs: nombre → [project_id_credential, email_notificacion] ──────
+// Agrega o quita TDPs aquí sin tocar el resto del pipeline
+def TDP_CONFIG = [
+    "tdp_sistemas"        : [credProjectId: "huawei-project-id-tdp-sistemas",        email: "tdp_sistemas@integratel.com.pe"],
+    "tdp_mpay"            : [credProjectId: "huawei-project-id-tdp-mpay",            email: "tdp_mpay@integratel.com.pe"],
+    "tdp_rpat"            : [credProjectId: "huawei-project-id-tdp-rpat",            email: "tdp_rpat@integratel.com.pe"],
+    "tdp_bdfscloud"       : [credProjectId: "huawei-project-id-tdp-bdfscloud",       email: "tdp_bdfscloud@integratel.com.pe"],
+    "tdp_soluciones"      : [credProjectId: "huawei-project-id-tdp-soluciones",      email: "tdp_soluciones@integratel.com.pe"],
+    "tdp_brybill"         : [credProjectId: "huawei-project-id-tdp-brybill",         email: "tdp_brybill@integratel.com.pe"],
+    "tdp_planificacioncom": [credProjectId: "huawei-project-id-tdp-planificacioncom",email: "tdp_planificacioncom@integratel.com.pe"],
+    "tdp_portalcu"        : [credProjectId: "huawei-project-id-tdp-portalcu",        email: "tdp_portalcu@integratel.com.pe"],
+    "tdp_stc_coe_averias" : [credProjectId: "huawei-project-id-tdp-stc-coe-averias", email: "tdp_stc_coe_averias@integratel.com.pe"],
+    "tdp_contactcenter"   : [credProjectId: "huawei-project-id-tdp-contactcenter",   email: "tdp_contactcenter@integratel.com.pe"],
+    "tdp_bi_iias"         : [credProjectId: "huawei-project-id-tdp-bi-iias",         email: "tdp_bi_iias@integratel.com.pe"]
+]
+
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '3'))
+        timeout(time: 60, unit: 'MINUTES')
+    }
+
+    // ── Disparadores automáticos (hora Lima = UTC-5) ─────────────────────────
+    // 07:00 Lima = 12:00 UTC  → cron '0 12 * * 1-5'
+    // 19:00 Lima = 00:00 UTC  → cron '0 0 * * 2-6'  (cruza medianoche)
+    triggers {
+        cron('0 12 * * 1-5\n0 0 * * 2-6')
+    }
+
+    parameters {
+        // Ejecución manual con control total
+        choice(
+            name: 'ACTION',
+            choices: ['AUTO', 'start', 'stop'],
+            description: 'AUTO = el pipeline decide según la hora. start/stop = forzar acción.'
+        )
+        choice(
+            name: 'TDP_TARGET',
+            choices: ['ALL', 'tdp_sistemas', 'tdp_mpay', 'tdp_rpat', 'tdp_bdfscloud',
+                      'tdp_soluciones', 'tdp_brybill', 'tdp_planificacioncom', 'tdp_portalcu',
+                      'tdp_stc_coe_averias', 'tdp_contactcenter', 'tdp_bi_iias'],
+            description: 'ALL = todos los TDPs. Selecciona uno para operar solo ese.'
+        )
+        string(
+            name: 'SERVER_FILTER',
+            defaultValue: 'cert',
+            description: 'Filtro por nombre de servidor (ej: cert, qa, dev). Deja "cert" para certificación.'
+        )
+        booleanParam(
+            name: 'DRY_RUN',
+            defaultValue: false,
+            description: 'true = solo muestra qué haría, sin ejecutar cambios reales.'
+        )
+    }
+
+    environment {
+        // ── Credenciales globales Huawei (AK/SK compartidas o por TDP) ────────
+        // Si cada TDP tiene sus propias AK/SK, se resuelven dentro de cada stage
+        HUAWEI_ACCESS_KEY = credentials('jenkins-huawei-ecs-access-key')
+        HUAWEI_SECRET_KEY = credentials('jenkins-huawei-ecs-secret-key')
+
+        // Región donde viven los servidores de certificación
+        HUAWEI_REGION     = 'la-south-2'
+
+        // URL IAM para obtener token (misma región)
+        IAM_ENDPOINT      = "https://iam.la-south-2.myhuaweicloud.com"
+        ECS_ENDPOINT      = "https://ecs.la-south-2.myhuaweicloud.com"
+    }
+
+    stages {
+
+        // ── 1. Resolver acción (AUTO detecta si es encendido o apagado) ───────
+        stage('Resolve Action') {
+            steps {
+                script {
+                    SCRIPT_LOGS += "=== RESOLVE ACTION ===\n"
+
+                    def action = params.ACTION
+
+                    if (action == 'AUTO') {
+                        // Lima UTC-5: hora actual en UTC ajustada
+                        def nowLima = new Date(System.currentTimeMillis() - (5 * 60 * 60 * 1000))
+                        def cal     = Calendar.getInstance()
+                        cal.setTime(nowLima)
+                        def hour = cal.get(Calendar.HOUR_OF_DAY)
+
+                        // Antes del mediodía → encender; después → apagar
+                        action = (hour < 12) ? 'start' : 'stop'
+                        SCRIPT_LOGS += "AUTO → hora Lima: ${hour}h → acción resuelta: ${action.toUpperCase()}\n"
+                    }
+
+                    env.RESOLVED_ACTION = action
+                    SCRIPT_LOGS += "✓ Acción: ${action.toUpperCase()}\n"
+                    SCRIPT_LOGS += "✓ TDP objetivo: ${params.TDP_TARGET}\n"
+                    SCRIPT_LOGS += "✓ Filtro de servidores: ${params.SERVER_FILTER}\n"
+                    SCRIPT_LOGS += "✓ Dry-run: ${params.DRY_RUN}\n"
+
+                    echo "Acción resuelta: ${action.toUpperCase()} — TDP: ${params.TDP_TARGET}"
+                }
+            }
+        }
+
+        // ── 2. Preparar entorno ───────────────────────────────────────────────
+        stage('Cleanup Workspace') {
+            steps {
+                script {
+                    SCRIPT_LOGS += "\n=== CLEANUP WORKSPACE ===\n"
+                    try {
+                        sh '''
+                        echo "Limpiando workspace..."
+                        rm -f *.json *.py *.log *.txt || true
+                        ls -la
+                        '''
+                        SCRIPT_LOGS += "✓ Workspace limpiado.\n"
+                    } catch (Exception e) {
+                        SCRIPT_LOGS += "⚠ Warning limpieza: ${e.getMessage()}\n"
+                    }
+                }
+            }
+        }
+
+        // ── 3. Checkout del repositorio con el script Python ──────────────────
+        stage('Checkout Repository') {
+            steps {
+                script {
+                    SCRIPT_LOGS += "\n=== CHECKOUT REPOSITORY ===\n"
+                    try {
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: '*/main']],
+                            doGenerateSubmoduleConfigurations: false,
+                            extensions: [
+                                [$class: 'CleanBeforeCheckout'],
+                                [$class: 'CloneOption', depth: 1, noTags: true, shallow: true]
+                            ],
+                            userRemoteConfigs: [[
+                                url: 'https://bitbucket.org/integratelperu/huawei-ecs-scheduler.git',
+                                credentialsId: 'bitbucket-token'
+                            ]]
+                        ])
+                        SCRIPT_LOGS += "✓ Checkout completado.\n"
+                    } catch (Exception e) {
+                        SCRIPT_LOGS += "✗ Error checkout: ${e.getMessage()}\n"
+                        throw e
+                    }
+                }
+            }
+        }
+
+        // ── 4. Verificar dependencias Python ─────────────────────────────────
+        stage('Verify Dependencies') {
+            steps {
+                script {
+                    SCRIPT_LOGS += "\n=== VERIFY DEPENDENCIES ===\n"
+                    try {
+                        sh '''
+                        echo "Verificando Python y dependencias..."
+                        python3 --version
+                        pip3 show huaweicloudsdkecs > /dev/null 2>&1 || pip3 install huaweicloudsdkcore huaweicloudsdkecs --quiet
+                        pip3 show requests > /dev/null 2>&1       || pip3 install requests --quiet
+                        echo "✓ Dependencias OK"
+
+                        if [ ! -f "manage_ecs_servers.py" ]; then
+                            echo "✗ Script manage_ecs_servers.py no encontrado en el repo"
+                            exit 1
+                        fi
+                        echo "✓ Script Python encontrado"
+                        '''
+                        SCRIPT_LOGS += "✓ Dependencias verificadas.\n"
+                    } catch (Exception e) {
+                        SCRIPT_LOGS += "✗ Error dependencias: ${e.getMessage()}\n"
+                        throw e
+                    }
+                }
+            }
+        }
+
+        // ── 5. Ejecutar acción sobre cada TDP ────────────────────────────────
+        stage('Execute ECS Action') {
+            steps {
+                script {
+                    SCRIPT_LOGS += "\n=== EXECUTE ECS ACTION: ${env.RESOLVED_ACTION.toUpperCase()} ===\n"
+
+                    // Filtrar TDPs según parámetro
+                    def tdpsToProcess = (params.TDP_TARGET == 'ALL')
+                        ? TDP_CONFIG
+                        : TDP_CONFIG.subMap([params.TDP_TARGET])
+
+                    def globalSuccess = true
+                    def tdpResults    = [:]  // nombre → [ok: bool, servers: [...]]
+
+                    tdpsToProcess.each { tdpName, tdpData ->
+                        SCRIPT_LOGS += "\n--- Procesando: ${tdpName} ---\n"
+                        echo "Procesando TDP: ${tdpName}"
+
+                        try {
+                            // Obtener el project_id desde Jenkins Credentials
+                            def projectId = sh(
+                                script: "echo \${${tdpData.credProjectId.replace('-','_').toUpperCase()}}",
+                                returnStdout: true
+                            ).trim()
+
+                            // Si no hay credential resuelta por env, usar withCredentials
+                            withCredentials([string(credentialsId: tdpData.credProjectId, variable: 'TDP_PROJECT_ID')]) {
+
+                                def dryRunFlag = params.DRY_RUN ? '--dry-run' : ''
+
+                                def result = sh(
+                                    script: """
+                                    python3 manage_ecs_servers.py \
+                                        --action   ${env.RESOLVED_ACTION} \
+                                        --project  \${TDP_PROJECT_ID} \
+                                        --region   ${env.HUAWEI_REGION} \
+                                        --filter   ${params.SERVER_FILTER} \
+                                        --tdp-name ${tdpName} \
+                                        --output   results_${tdpName}.json \
+                                        ${dryRunFlag}
+                                    """,
+                                    returnStatus: true
+                                )
+
+                                if (result == 0) {
+                                    SCRIPT_LOGS += "✓ ${tdpName}: acción completada.\n"
+                                    tdpResults[tdpName] = [ok: true]
+                                } else {
+                                    SCRIPT_LOGS += "✗ ${tdpName}: falló con código ${result}.\n"
+                                    tdpResults[tdpName] = [ok: false]
+                                    globalSuccess = false
+                                }
+
+                                // Leer resumen del JSON de resultados
+                                if (fileExists("results_${tdpName}.json")) {
+                                    def jsonText = readFile("results_${tdpName}.json")
+                                    SCRIPT_LOGS += "   Detalle: ${jsonText.take(500)}\n"
+                                }
+                            }
+
+                        } catch (Exception e) {
+                            SCRIPT_LOGS += "✗ ${tdpName}: excepción — ${e.getMessage()}\n"
+                            tdpResults[tdpName] = [ok: false, error: e.getMessage()]
+                            globalSuccess = false
+                        }
+                    }
+
+                    // Guardar resultados para el post
+                    env.TDP_RESULTS_JSON = groovy.json.JsonOutput.toJson(tdpResults)
+                    env.GLOBAL_SUCCESS   = globalSuccess.toString()
+
+                    if (!globalSuccess) {
+                        error("Uno o más TDPs tuvieron errores. Ver logs para detalle.")
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Post: notificación por email a cada TDP ───────────────────────────────
+    post {
+        always {
+            script {
+                SCRIPT_LOGS += "\n=== SENDING NOTIFICATIONS ===\n"
+
+                try {
+                    BUILD_USER_ID = sh(script: 'echo $BUILD_USER_ID', returnStdout: true).trim()
+                    if (!BUILD_USER_ID || BUILD_USER_ID == "null") BUILD_USER_ID = "scheduler"
+                } catch (Exception e) {
+                    BUILD_USER_ID = "scheduler"
+                }
+
+                def isPipelineOk = (currentBuild.result != 'FAILURE')
+                def color        = isPipelineOk ? 'green' : 'red'
+                def statusMsg    = isPipelineOk
+                    ? "✓ Pipeline completado exitosamente"
+                    : "✗ Pipeline completado con errores"
+
+                SCRIPT_LOGS += isPipelineOk
+                    ? "=== PIPELINE COMPLETADO EXITOSAMENTE ===\n"
+                    : "=== PIPELINE COMPLETADO CON FALLO ===\n"
+
+                // Notificación global al equipo de sistemas (resumen de todos los TDPs)
+                sendNotification(
+                    statusMsg,
+                    color,
+                    BUILD_USER_ID,
+                    SCRIPT_LOGS,
+                    env.RESOLVED_ACTION ?: 'N/A',
+                    'ecs-scheduler-global',    // destinatario de resumen general
+                    'christian.garciareyes@telefonica.com'
+                )
+
+                echo "Notificaciones enviadas."
+            }
+        }
+        success { echo "Pipeline ECS Scheduler: OK" }
+        failure { echo "Pipeline ECS Scheduler: FALLO — revisar logs." }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Función de notificación — misma estructura que los pipelines existentes
+// ─────────────────────────────────────────────────────────────────────────────
+def sendNotification(message, color, userId, scriptLogs, action, jobContext, defaultRecipient) {
+
+    // Mapa usuario Jenkins → correo personal (igual al patrón existente)
+    def userEmails = [
+        'cgarcia'   : 'christian.garciareyes@telefonica.com',
+        'mgutierrez': 'michael.gutierrez@telefonica.com',
+        'jmoreno'   : 'jason.moreno@telefonica.com',
+        'pnicho'    : 'pilar.nicho@telefonica.com',
+        'atejada'   : 'alex.tejadal@telefonica.com',
+        'amendoza'  : 'arturo.mendoza@telefonica.com',
+        'portalcu'  : 'javier.dietz@telefonica.com'
+    ]
+
+    def recipient = userEmails.getOrDefault(userId, defaultRecipient)
+
+    // Timestamp Lima (UTC-5) — mismo patrón que los pipelines existentes
+    def now  = new Date(System.currentTimeMillis() - (5 * 60 * 60 * 1000))
+    def dias = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado']
+    def meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
+    def cal  = Calendar.getInstance(); cal.setTime(now)
+
+    def diaSemana  = dias[cal.get(Calendar.DAY_OF_WEEK) - 1]
+    def dia        = cal.get(Calendar.DAY_OF_MONTH)
+    def mes        = meses[cal.get(Calendar.MONTH)]
+    def año        = cal.get(Calendar.YEAR)
+    def hora       = cal.get(Calendar.HOUR) == 0 ? 12 : cal.get(Calendar.HOUR)
+    def minutosStr = cal.get(Calendar.MINUTE) < 10 ? "0${cal.get(Calendar.MINUTE)}" : "${cal.get(Calendar.MINUTE)}"
+    def ampm       = cal.get(Calendar.AM_PM) == Calendar.AM ? "a. m." : "p. m."
+    def timestamp  = "${diaSemana}, ${dia} de ${mes} de ${año}, ${hora}:${minutosStr} ${ampm}"
+
+    def formattedLogs = scriptLogs
+        ? scriptLogs.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll("\n","<br>")
+        : "Sin logs disponibles"
+
+    def actionLabel = action?.toUpperCase() ?: 'N/A'
+    def actionColor = (action == 'start') ? '#28a745' : '#dc3545'
+    def actionIcon  = (action == 'start') ? '▶ ENCENDIDO' : '⏹ APAGADO'
+
+    try {
+        emailext(
+            subject: "[ECS Scheduler] ${actionLabel} — ${message} — ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            body: """
+                <div style='font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;'>
+                    <h3 style='color: ${color}; border-bottom: 2px solid ${color}; padding-bottom: 10px;'>
+                        Huawei ECS Scheduler — Reporte de ejecución
+                    </h3>
+
+                    <div style='background:#f9f9f9; padding:15px; border-radius:5px; margin:15px 0;'>
+                        <p><strong>Job:</strong> ${env.JOB_NAME}</p>
+                        <p><strong>Build:</strong> #${env.BUILD_NUMBER}</p>
+                        <p><strong>Acción ejecutada:</strong>
+                            <span style='color:${actionColor}; font-weight:bold; font-size:15px;'>${actionIcon}</span>
+                        </p>
+                        <p><strong>TDP objetivo:</strong> ${params.TDP_TARGET ?: 'ALL'}</p>
+                        <p><strong>Filtro servidores:</strong> ${params.SERVER_FILTER ?: 'cert'}</p>
+                        <p><strong>Dry-run:</strong> ${params.DRY_RUN ?: false}</p>
+                        <p><strong>Estado:</strong>
+                            <span style='color:${color}; font-weight:bold;'>${message}</span>
+                        </p>
+                        <p><strong>Fecha (Lima):</strong> ${timestamp}</p>
+                        <p><strong>Build URL:</strong>
+                            <a href='${env.BUILD_URL}' style='color:#0066cc;'>${env.BUILD_URL}</a>
+                        </p>
+                    </div>
+
+                    <h4 style='color:#333; margin-top:25px;'>📝 Logs del Pipeline:</h4>
+                    <div style='background:#f4f4f4; border:1px solid #ddd; padding:15px;
+                                border-radius:4px; font-family:Consolas,monospace; font-size:12px;
+                                max-height:500px; overflow-y:auto; white-space:pre-wrap;'>
+                        ${formattedLogs}
+                    </div>
+                </div>
+            """,
+            to: recipient,
+            attachLog: false,
+            mimeType: 'text/html'
+        )
+        echo "✓ Correo enviado a: ${recipient}"
+    } catch (Exception e) {
+        echo "⚠ Error enviando correo: ${e.getMessage()}"
+    }
+}
