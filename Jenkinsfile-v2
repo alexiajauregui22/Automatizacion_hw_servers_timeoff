@@ -55,9 +55,9 @@ pipeline {
             description: 'ALL = todos los TDPs. Selecciona uno para operar solo ese.'
         )
         string(
-            name: 'SERVER_FILTER',
-            defaultValue: 'cert',
-            description: 'Filtro por nombre de servidor (ej: cert, qa, dev). Deja "cert" para certificación.'
+            name: 'SERVER_IDS',
+            defaultValue: '',
+            description: 'IDs exactos de servidores separados por coma. Más seguro que filtrar por nombre.'
         )
         booleanParam(
             name: 'DRY_RUN',
@@ -190,9 +190,8 @@ pipeline {
                             // Si no hay credential resuelta por env, usar withCredentials
                             withCredentials([string(credentialsId: tdpData.credProjectId, variable: 'TDP_PROJECT_ID')]) {
                                 
-                                def dryRunFlag   = params.DRY_RUN ? '--dry-run' : ''
-                                def filterFlag   = params.SERVER_FILTER ? "--filter ${params.SERVER_FILTER}" : ''
-                                def serverIdsFlag = params.SERVER_IDS   ? "--server-ids ${params.SERVER_IDS}" : ''
+                                def dryRunFlag    = params.DRY_RUN    ? '--dry-run' : ''
+                                def serverIdsFlag = params.SERVER_IDS ? "--server-ids ${params.SERVER_IDS}" : ''
 
                                 def result = sh(
                                     script: """
