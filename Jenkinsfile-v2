@@ -201,7 +201,7 @@ pipeline {
                                         --region   ${env.HUAWEI_REGION} \
                                         --tdp-name ${tdpName} \
                                         --output   results_${tdpName}.json \
-                                        ${filterFlag} \
+                                        
                                         ${serverIdsFlag} \
                                         ${dryRunFlag}
                                     """,
