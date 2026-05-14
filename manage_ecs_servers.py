@@ -150,7 +150,7 @@ class ECSScheduler:
     def _list_servers_rest(self, name_filter: str) -> list:
         token  = self._get_iam_token()
         url  = f"https://ecs.{self.region}.myhuaweicloud.com"
-        url += f"/v2/{self.project_id}/cloudservers/detail"
+        url += f"/v2/{self.project_id}/servers/detail"
 
         params = {"name": name_filter} if name_filter else {}
 
