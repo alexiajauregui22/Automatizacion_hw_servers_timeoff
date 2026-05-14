@@ -194,17 +194,7 @@ pipeline {
                                 def serverIdsFlag = params.SERVER_IDS ? "--server-ids ${params.SERVER_IDS}" : ''
 
                                 def result = sh(
-                                    script: """
-                                    python3 manage_ecs_servers.py \
-                                        --action   ${env.RESOLVED_ACTION} \
-                                        --project  \${TDP_PROJECT_ID} \
-                                        --region   ${env.HUAWEI_REGION} \
-                                        --tdp-name ${tdpName} \
-                                        --output   results_${tdpName}.json \
-                                        
-                                        ${serverIdsFlag} \
-                                        ${dryRunFlag}
-                                    """,
+                                    script: "python3 manage_ecs_servers.py --action ${env.RESOLVED_ACTION} --project \${TDP_PROJECT_ID} --region ${env.HUAWEI_REGION} --tdp-name ${tdpName} --output results_${tdpName}.json ${serverIdsFlag} ${dryRunFlag}",
                                     returnStatus: true
                                 )
 
