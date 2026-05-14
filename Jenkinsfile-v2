@@ -189,8 +189,10 @@ pipeline {
 
                             // Si no hay credential resuelta por env, usar withCredentials
                             withCredentials([string(credentialsId: tdpData.credProjectId, variable: 'TDP_PROJECT_ID')]) {
-
-                                def dryRunFlag = params.DRY_RUN ? '--dry-run' : ''
+                                
+                                def dryRunFlag   = params.DRY_RUN ? '--dry-run' : ''
+                                def filterFlag   = params.SERVER_FILTER ? "--filter ${params.SERVER_FILTER}" : ''
+                                def serverIdsFlag = params.SERVER_IDS   ? "--server-ids ${params.SERVER_IDS}" : ''
 
                                 def result = sh(
                                     script: """
@@ -198,9 +200,10 @@ pipeline {
                                         --action   ${env.RESOLVED_ACTION} \
                                         --project  \${TDP_PROJECT_ID} \
                                         --region   ${env.HUAWEI_REGION} \
-                                        --filter   ${params.SERVER_FILTER} \
                                         --tdp-name ${tdpName} \
                                         --output   results_${tdpName}.json \
+                                        ${filterFlag} \
+                                        ${serverIdsFlag} \
                                         ${dryRunFlag}
                                     """,
                                     returnStatus: true
@@ -264,16 +267,15 @@ pipeline {
                     ? "=== PIPELINE COMPLETADO EXITOSAMENTE ===\n"
                     : "=== PIPELINE COMPLETADO CON FALLO ===\n"
 
-                // Notificación global al equipo de sistemas (resumen de todos los TDPs)
-                sendNotification(
-                    statusMsg,
-                    color,
-                    BUILD_USER_ID,
-                    SCRIPT_LOGS,
-                    env.RESOLVED_ACTION ?: 'N/A',
-                    'ecs-scheduler-global',    // destinatario de resumen general
-                    'alexia.jauregui@integratel.com.pe'
-                )
+                //sendNotification(
+                //   statusMsg,
+                //    color,
+                //    BUILD_USER_ID,
+                //    SCRIPT_LOGS,
+                //    env.RESOLVED_ACTION ?: 'N/A',
+                //    'ecs-scheduler-global',    // destinatario de resumen general
+                //    'alexia.jauregui@integratel.com.pe'
+                //)
 
                 echo "Notificaciones enviadas."
             }
