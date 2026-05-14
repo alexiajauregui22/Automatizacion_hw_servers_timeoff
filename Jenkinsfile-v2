@@ -204,6 +204,15 @@ pipeline {
                 // sendNotification(statusMsg, color, BUILD_USER_ID, SCRIPT_LOGS,
                 //     env.RESOLVED_ACTION ?: 'N/A', 'alexia.jauregui@integratel.com.pe')
 
+
+                sendNotification(
+                    statusMsg,
+                    color,
+                    BUILD_USER_ID,
+                    SCRIPT_LOGS,
+                    env.RESOLVED_ACTION ?: 'N/A',
+                    'alexia.jauregui@integratel.com.pe'
+                )
                 echo "Notificaciones enviadas."
             }
         }
