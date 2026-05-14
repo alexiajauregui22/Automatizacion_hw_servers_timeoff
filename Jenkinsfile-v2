@@ -121,7 +121,7 @@ pipeline {
                     try {
                         sh '''
                         echo "Limpiando workspace..."
-                        rm -f *.json *.py *.log *.txt || true
+                        rm -f *.json *.log *.txt || true
                         ls -la
                         '''
                         SCRIPT_LOGS += "✓ Workspace limpiado.\n"
@@ -143,8 +143,8 @@ pipeline {
                         sh '''
                         echo "Verificando Python y dependencias..."
                         python3 --version
-                        pip3 show huaweicloudsdkecs > /dev/null 2>&1 || pip3 install huaweicloudsdkcore huaweicloudsdkecs --quiet
-                        pip3 show requests > /dev/null 2>&1       || pip3 install requests --quiet
+                        pip3 show huaweicloudsdkecs > /dev/null 2>&1 || pip3 install huaweicloudsdkcore huaweicloudsdkecs requests --quiet --break-system-packages
+                        pip3 show requests > /dev/null 2>&1       || pip3 install requests --quiet --break-system-packages
                         echo "✓ Dependencias OK"
 
                         if [ ! -f "manage_ecs_servers.py" ]; then
@@ -272,7 +272,7 @@ pipeline {
                     SCRIPT_LOGS,
                     env.RESOLVED_ACTION ?: 'N/A',
                     'ecs-scheduler-global',    // destinatario de resumen general
-                    'christian.garciareyes@telefonica.com'
+                    'alexia.jauregui@integratel.com.pe'
                 )
 
                 echo "Notificaciones enviadas."
@@ -288,15 +288,16 @@ pipeline {
 // ─────────────────────────────────────────────────────────────────────────────
 def sendNotification(message, color, userId, scriptLogs, action, jobContext, defaultRecipient) {
 
-    // Mapa usuario Jenkins → correo personal (igual al patrón existente)
+    
     def userEmails = [
-        'cgarcia'   : 'christian.garciareyes@telefonica.com',
-        'mgutierrez': 'michael.gutierrez@telefonica.com',
-        'jmoreno'   : 'jason.moreno@telefonica.com',
-        'pnicho'    : 'pilar.nicho@telefonica.com',
-        'atejada'   : 'alex.tejadal@telefonica.com',
-        'amendoza'  : 'arturo.mendoza@telefonica.com',
-        'portalcu'  : 'javier.dietz@telefonica.com'
+    'cgarcia'   : 'christian.garciareyes@telefonica.com',
+    'mgutierrez': 'michael.gutierrez@telefonica.com',
+    'jmoreno'   : 'jason.moreno@telefonica.com',
+    'pnicho'    : 'pilar.nicho@telefonica.com',
+    'atejada'   : 'alex.tejadal@telefonica.com',
+    'amendoza'  : 'arturo.mendoza@telefonica.com',
+    //'portalcu'  : 'javier.dietz@telefonica.com',
+    'ajauregui' : 'alexia.jauregui@integratel.com.pe'   // ← agregar esta línea
     ]
 
     def recipient = userEmails.getOrDefault(userId, defaultRecipient)
