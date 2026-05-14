@@ -97,7 +97,7 @@ pipeline {
                 script {
                     SCRIPT_LOGS += "\n=== CLEANUP WORKSPACE ===\n"
                     try {
-                        sh 'rm -f results_*.json *.log *.txt || true && ls -la'
+                        sh 'rm -f results_*.json *.log || true && ls -la'
                         SCRIPT_LOGS += "✓ Workspace limpiado.\n"
                     } catch (Exception e) {
                         SCRIPT_LOGS += "⚠ Warning: ${e.getMessage()}\n"
