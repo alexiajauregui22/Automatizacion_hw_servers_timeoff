@@ -132,33 +132,7 @@ pipeline {
             }
         }
 
-        // ── 3. Checkout del repositorio con el script Python ──────────────────
-        stage('Checkout Repository') {
-            steps {
-                script {
-                    SCRIPT_LOGS += "\n=== CHECKOUT REPOSITORY ===\n"
-                    try {
-                        checkout([
-                            $class: 'GitSCM',
-                            branches: [[name: '*/main']],
-                            doGenerateSubmoduleConfigurations: false,
-                            extensions: [
-                                [$class: 'CleanBeforeCheckout'],
-                                [$class: 'CloneOption', depth: 1, noTags: true, shallow: true]
-                            ],
-                            userRemoteConfigs: [[
-                                url: 'https://bitbucket.org/integratelperu/huawei-ecs-scheduler.git',
-                                credentialsId: 'bitbucket-token'
-                            ]]
-                        ])
-                        SCRIPT_LOGS += "✓ Checkout completado.\n"
-                    } catch (Exception e) {
-                        SCRIPT_LOGS += "✗ Error checkout: ${e.getMessage()}\n"
-                        throw e
-                    }
-                }
-            }
-        }
+        
 
         // ── 4. Verificar dependencias Python ─────────────────────────────────
         stage('Verify Dependencies') {
