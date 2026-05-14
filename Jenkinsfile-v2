@@ -73,11 +73,11 @@ pipeline {
         HUAWEI_SECRET_KEY = credentials('jenkins-huawei-ecs-secret-key')
 
         // Región donde viven los servidores de certificación
-        HUAWEI_REGION     = 'la-south-2'
+        HUAWEI_REGION     = 'sa-brazil-1'
 
         // URL IAM para obtener token (misma región)
-        IAM_ENDPOINT      = "https://iam.la-south-2.myhuaweicloud.com"
-        ECS_ENDPOINT      = "https://ecs.la-south-2.myhuaweicloud.com"
+        IAM_ENDPOINT  = "https://iam.sa-brazil-1.myhuaweicloud.com"
+        ECS_ENDPOINT  = "https://ecs.sa-brazil-1.myhuaweicloud.com"
     }
 
     stages {
@@ -196,6 +196,7 @@ pipeline {
                                 def result = sh(
                                     script: "python3 manage_ecs_servers.py --action ${env.RESOLVED_ACTION} --project \${TDP_PROJECT_ID} --region ${env.HUAWEI_REGION} --tdp-name ${tdpName} --output results_${tdpName}.json ${serverIdsFlag} ${dryRunFlag}",
                                     returnStatus: true
+
                                 )
 
                                 if (result == 0) {
