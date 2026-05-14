@@ -356,13 +356,14 @@ class ECSScheduler:
 # ══════════════════════════════════════════════════════════════════════════════
 def parse_args():
     p = argparse.ArgumentParser(description="Huawei ECS Scheduler — Integratel TDPs")
-    p.add_argument("--action",   required=True, choices=["start", "stop"])
-    p.add_argument("--project",  required=True, help="Huawei project_id")
-    p.add_argument("--region",   default="la-south-2")
-    p.add_argument("--filter",   default="cert", help="Filtro parcial por nombre de servidor")
-    p.add_argument("--tdp-name", default="unknown", help="Nombre del TDP (para logs)")
-    p.add_argument("--output",   default="results.json", help="Archivo JSON de salida")
-    p.add_argument("--dry-run",  action="store_true", help="Solo muestra, no ejecuta")
+    p.add_argument("--action",     required=True, choices=["start", "stop"])
+    p.add_argument("--project",    required=True, help="Huawei project_id")
+    p.add_argument("--region",     default="la-south-2")
+    p.add_argument("--filter",     default="", help="Filtro parcial por nombre de servidor")
+    p.add_argument("--server-ids", default="", help="IDs exactos separados por coma (más seguro que --filter)")
+    p.add_argument("--tdp-name",   default="unknown", help="Nombre del TDP (para logs)")
+    p.add_argument("--output",     default="results.json", help="Archivo JSON de salida")
+    p.add_argument("--dry-run",    action="store_true", help="Solo muestra, no ejecuta")
     return p.parse_args()
 
 
@@ -374,11 +375,11 @@ def main():
     print(f"  TDP       : {args.tdp_name}")
     print(f"  Project ID: {args.project}")
     print(f"  Región    : {args.region}")
-    print(f"  Filtro    : {args.filter}")
+    print(f"  Filtro    : {args.filter or '(ninguno)'}")
+    print(f"  Server IDs: {args.server_ids or '(ninguno)'}")
     print(f"  Dry-run   : {args.dry_run}")
     print("=" * 70 + "\n")
 
-    # ── Credenciales desde entorno (igual que OBS en los otros pipelines) ─────
     access_key = os.environ.get("HUAWEI_ACCESS_KEY")
     secret_key = os.environ.get("HUAWEI_SECRET_KEY")
 
@@ -392,6 +393,7 @@ def main():
         "project_id": args.project,
         "region"    : args.region,
         "filter"    : args.filter,
+        "server_ids": args.server_ids,
         "dry_run"   : args.dry_run,
         "status"    : "error",
         "timestamp" : datetime.utcnow().isoformat() + "Z"
@@ -406,13 +408,27 @@ def main():
             dry_run=args.dry_run
         )
 
-        # Listar servidores que coincidan con el filtro
-        servers = scheduler.list_servers(name_filter=args.filter)
+        # ── Obtener servidores por IDs exactos o por filtro de nombre ─────────
+        if args.server_ids:
+            # Modo seguro: IDs exactos — lista todos y filtra por UUID
+            target_ids = [i.strip() for i in args.server_ids.split(",") if i.strip()]
+            all_servers = scheduler.list_servers()
+            servers = [s for s in all_servers if s["id"] in target_ids]
+            log.info("Servidores por ID exacto: %d de %d solicitados encontrados",
+                     len(servers), len(target_ids))
+            # Alertar si falta algún ID
+            found_ids = {s["id"] for s in servers}
+            for tid in target_ids:
+                if tid not in found_ids:
+                    log.warning("  ⚠ ID no encontrado en el proyecto: %s", tid)
+        else:
+            # Modo filtro por nombre
+            servers = scheduler.list_servers(name_filter=args.filter)
 
         if not servers:
-            print(f"⚠ No se encontraron servidores con filtro '{args.filter}' en {args.tdp_name}.")
+            print(f"⚠ No se encontraron servidores para operar en {args.tdp_name}.")
             results["status"]  = "warning"
-            results["message"] = f"Sin servidores con filtro '{args.filter}'"
+            results["message"] = "Sin servidores encontrados"
             _save_results(results, args.output)
             sys.exit(0)
 

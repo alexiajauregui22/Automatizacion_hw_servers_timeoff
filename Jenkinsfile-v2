@@ -1,11 +1,3 @@
-// ============================================================
-//  Jenkinsfile-v2
-//  Pipeline: Huawei ECS Scheduler — Encendido/Apagado automático
-//  Proyectos: Todos los TDP de Integratel
-//  Horario  : Lun–Vie 07:00 AM encendido / 07:00 PM apagado (Lima UTC-5)
-//  NOTA     : Usar "Jenkinsfile-v2" como Script Path en la config del Job
-// ============================================================
-
 def BUILD_USER_ID = "unknown"
 def SCRIPT_LOGS   = ""
 
@@ -56,8 +48,13 @@ pipeline {
         )
         string(
             name: 'SERVER_FILTER',
-            defaultValue: 'cert',
-            description: 'Filtro por nombre de servidor (ej: cert, qa, dev). Deja "cert" para certificación.'
+            defaultValue: '',
+            description: 'Filtro parcial por nombre (opcional). Si usas SERVER_IDS déjalo vacío.'
+        )
+        string(
+            name: 'SERVER_IDS',
+            defaultValue: 'cf3dfa78-ecbd-4771-9532-6daed8512f39,0c9d8c3a-13f4-46aa-b664-3cb27b42748f,028fb93d-9638-48a3-97a2-535bfd73e1bc,2035cf07-cb21-4bc8-9316-6d15aee5cbb5,fc6e2b30-b8e9-4c6e-99db-e57caab8d5e3,f816791c-9daa-4897-b7b8-eb6cf16bc38f,0a77375e-048f-4250-b36c-7c25d05921f2',
+            description: 'IDs exactos de servidores separados por coma. Más seguro que SERVER_FILTER. Dejar vacío para usar SERVER_FILTER.'
         )
         booleanParam(
             name: 'DRY_RUN',
@@ -121,7 +118,7 @@ pipeline {
                     try {
                         sh '''
                         echo "Limpiando workspace..."
-                        rm -f *.json *.log *.txt || true
+                        rm -f *.json *.py *.log *.txt || true
                         ls -la
                         '''
                         SCRIPT_LOGS += "✓ Workspace limpiado.\n"
@@ -132,9 +129,34 @@ pipeline {
             }
         }
 
-        
+        // ── 3. Checkout del repositorio con el script Python ──────────────────
+        stage('Checkout Repository') {
+            steps {
+                script {
+                    SCRIPT_LOGS += "\n=== CHECKOUT REPOSITORY ===\n"
+                    try {
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: '*/main']],
+                            doGenerateSubmoduleConfigurations: false,
+                            extensions: [
+                                [$class: 'CleanBeforeCheckout'],
+                                [$class: 'CloneOption', depth: 1, noTags: true, shallow: true]
+                            ],
+                            userRemoteConfigs: [[
+                                url: 'https://bitbucket.org/integratelperu/huawei-ecs-scheduler.git',
+                                credentialsId: 'bitbucket-token'
+                            ]]
+                        ])
+                        SCRIPT_LOGS += "✓ Checkout completado.\n"
+                    } catch (Exception e) {
+                        SCRIPT_LOGS += "✗ Error checkout: ${e.getMessage()}\n"
+                        throw e
+                    }
+                }
+            }
+        }
 
-        // ── 4. Verificar dependencias Python ─────────────────────────────────
         stage('Verify Dependencies') {
             steps {
                 script {
@@ -143,8 +165,8 @@ pipeline {
                         sh '''
                         echo "Verificando Python y dependencias..."
                         python3 --version
-                        pip3 show huaweicloudsdkecs > /dev/null 2>&1 || pip3 install huaweicloudsdkcore huaweicloudsdkecs requests --quiet --break-system-packages
-                        pip3 show requests > /dev/null 2>&1       || pip3 install requests --quiet --break-system-packages
+                        pip3 show huaweicloudsdkecs > /dev/null 2>&1 || pip3 install huaweicloudsdkcore huaweicloudsdkecs --quiet
+                        pip3 show requests > /dev/null 2>&1       || pip3 install requests --quiet
                         echo "✓ Dependencias OK"
 
                         if [ ! -f "manage_ecs_servers.py" ]; then
@@ -162,7 +184,6 @@ pipeline {
             }
         }
 
-        // ── 5. Ejecutar acción sobre cada TDP ────────────────────────────────
         stage('Execute ECS Action') {
             steps {
                 script {
@@ -190,6 +211,8 @@ pipeline {
                             // Si no hay credential resuelta por env, usar withCredentials
                             withCredentials([string(credentialsId: tdpData.credProjectId, variable: 'TDP_PROJECT_ID')]) {
 
+                                def serverIdsFlag = params.SERVER_IDS?.trim() ? "--server-ids '${params.SERVER_IDS.trim()}'" : ""
+                                def serverFilterFlag = params.SERVER_FILTER?.trim() ? "--filter ${params.SERVER_FILTER.trim()}" : ""
                                 def dryRunFlag = params.DRY_RUN ? '--dry-run' : ''
 
                                 def result = sh(
@@ -198,9 +221,10 @@ pipeline {
                                         --action   ${env.RESOLVED_ACTION} \
                                         --project  \${TDP_PROJECT_ID} \
                                         --region   ${env.HUAWEI_REGION} \
-                                        --filter   ${params.SERVER_FILTER} \
                                         --tdp-name ${tdpName} \
                                         --output   results_${tdpName}.json \
+                                        ${serverIdsFlag} \
+                                        ${serverFilterFlag} \
                                         ${dryRunFlag}
                                     """,
                                     returnStatus: true
@@ -241,7 +265,6 @@ pipeline {
         }
     }
 
-    // ── Post: notificación por email a cada TDP ───────────────────────────────
     post {
         always {
             script {
@@ -288,16 +311,16 @@ pipeline {
 // ─────────────────────────────────────────────────────────────────────────────
 def sendNotification(message, color, userId, scriptLogs, action, jobContext, defaultRecipient) {
 
-    
+    // Mapa usuario Jenkins → correo personal (igual al patrón existente)
     def userEmails = [
-    'cgarcia'   : 'christian.garciareyes@telefonica.com',
-    'mgutierrez': 'michael.gutierrez@telefonica.com',
-    'jmoreno'   : 'jason.moreno@telefonica.com',
-    'pnicho'    : 'pilar.nicho@telefonica.com',
-    'atejada'   : 'alex.tejadal@telefonica.com',
-    'amendoza'  : 'arturo.mendoza@telefonica.com',
-    //'portalcu'  : 'javier.dietz@telefonica.com',
-    'ajauregui' : 'alexia.jauregui@integratel.com.pe'   // ← agregar esta línea
+        'ajauregui' : 'alexia.jauregui@integratel.com.pe',
+        'cgarcia'   : 'christian.garciareyes@telefonica.com',
+        'mgutierrez': 'michael.gutierrez@telefonica.com',
+        'jmoreno'   : 'jason.moreno@telefonica.com',
+        'pnicho'    : 'pilar.nicho@telefonica.com',
+        'atejada'   : 'alex.tejadal@telefonica.com',
+        'amendoza'  : 'arturo.mendoza@telefonica.com',
+        'portalcu'  : 'javier.dietz@telefonica.com'
     ]
 
     def recipient = userEmails.getOrDefault(userId, defaultRecipient)
