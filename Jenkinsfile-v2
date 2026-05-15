@@ -48,9 +48,9 @@ pipeline {
         )
         choice(
             name: 'TDP_TARGET',
-            choices: ['ALL', 'tdp_sistemas', 'tdp_mpay', 'tdp_rpat', 'tdp_bdfscloud',
-                      'tdp_soluciones', 'tdp_brybill', 'tdp_planificacioncom', 'tdp_portalcu',
-                      'tdp_stc_coe_averias', 'tdp_contactcenter', 'tdp_bi_iias'],
+            choices: ['tdp_sistemas', 'ALL', 'tdp_mpay', 'tdp_rpat', 'tdp_bdfscloud',
+                    'tdp_soluciones', 'tdp_brybill', 'tdp_planificacioncom', 'tdp_portalcu',
+                    'tdp_stc_coe_averias', 'tdp_contactcenter', 'tdp_bi_iias'],
             description: 'ALL = todos los TDPs. Selecciona uno para operar solo ese.'
         )
         booleanParam(
