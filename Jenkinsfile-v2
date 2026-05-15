@@ -133,9 +133,16 @@ pipeline {
                 script {
                     SCRIPT_LOGS += "\n=== EXECUTE ECS ACTION: ${env.RESOLVED_ACTION.toUpperCase()} ===\n"
 
-                    def tdpsToProcess = (params.TDP_TARGET == 'ALL')
-                        ? TDP_CONFIG
-                        : TDP_CONFIG.subMap([params.TDP_TARGET])
+                    def tenantsEnConfig = sh(
+                        script: "grep -v '^#' servers_config.txt | grep -v '^\\s*\$' | cut -d';' -f1 | sort -u",
+                        returnStdout: true
+                    ).trim().split('\n').collect { it.trim().toLowerCase() }
+
+                    def tdpsToProcess = tenantsEnConfig.findAll { tenant ->
+                        params.TDP_TARGET == 'ALL' || tenant == params.TDP_TARGET
+                    }.collectEntries { tenant ->
+                        [(tenant): TDP_CONFIG[tenant]]
+                    }
 
                     def globalSuccess = true
 
