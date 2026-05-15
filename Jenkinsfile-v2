@@ -37,7 +37,7 @@ pipeline {
     // 07:00 Lima = 12:00 UTC  → encendido
     // 00:30 Lima = 05:30 UTC  → apagado
     triggers {
-        cron('0 12 * * 1-6\n30 5 * * 1-7')
+        cron('0 14 * * 1-6\n0 0 * * 1-7')
     }
 
     parameters {
