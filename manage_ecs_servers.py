@@ -160,7 +160,8 @@ class ECSScheduler:
     def _action_rest(self, server_id: str, payload: dict):
         token = self._get_token()
         url   = (f"https://ecs.{self.region}.myhuaweicloud.com"
-                 f"/v1/{self.project_id}/cloudservers/{server_id}/action")
+                f"/v2/{self.project_id}/servers/{server_id}/action")
+    
         resp  = requests.post(url,
                               headers={"X-Auth-Token": token,
                                        "Content-Type": "application/json"},
