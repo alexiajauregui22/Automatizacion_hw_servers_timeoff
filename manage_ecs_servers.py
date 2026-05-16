@@ -251,10 +251,13 @@ def main():
 
     if action == "AUTO":
         now_lima = datetime.now(LIMA_TZ)
-        hora     = now_lima.strftime("%H:%M")
-        action   = "start" if hora >= "07:00" and hora < "00:30" else "stop"
-        log.info("AUTO → hora Lima: %s → %s", hora, action.upper())
-
+        hour     = now_lima.hour
+        minute   = now_lima.minute
+         # El cron dispara 2 veces al día
+        # El config decide qué servidores encender/apagar según time_on/time_off
+        action = "start" if hour < 12 else "stop"
+        log.info("AUTO → hora Lima: %02d:%02d → %s", hour, minute, action.upper())
+        
     print("\n" + "=" * 70)
     print(f"  HUAWEI ECS SCHEDULER — {action.upper()}")
     print(f"  Tenant : {args.tenant}  |  Config: {args.config}")
