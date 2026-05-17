@@ -80,7 +80,9 @@ pipeline {
                         def hour = cal.get(Calendar.HOUR_OF_DAY)
                         def min  = cal.get(Calendar.MINUTE)
                         // 07:00 → encender | 00:30 → apagar
-                        action = (hour >= 7 && !(hour == 0 && min >= 30)) ? 'start' : 'stop'
+                        //action = (hour >= 7 && !(hour == 0 && min >= 30)) ? 'start' : 'stop'
+                        action = (hour >= 7 && hour < 19) ? 'start' : 'stop'
+
                         SCRIPT_LOGS += "AUTO → hora Lima: ${hour}:${min} → ${action.toUpperCase()}\n"
                     }
                     env.RESOLVED_ACTION = action
